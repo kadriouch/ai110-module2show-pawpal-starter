@@ -4,6 +4,31 @@
 
 **a. Initial design**
 
+The three core actions a user should be able to perform in PawPal+ are:
+
+1. **Enter owner and pet information** — The user provides their name, their pet's name and type, and how much time they have available today. This sets the context that the scheduler uses to build a realistic plan. Without knowing the owner's time budget, the app cannot decide which tasks fit in a given day.
+
+2. **Add a care task** — The user creates tasks such as "morning walk," "medication," or "grooming," and specifies each task's estimated duration (in minutes) and priority level (high, medium, or low). This builds the pool of tasks from which the daily plan is drawn. Users can add as many tasks as their pet needs.
+
+3. **Generate today's plan** — The user triggers the scheduler, which selects and orders tasks based on priority and available time, then displays the resulting daily schedule. The app also explains the reasoning — for example, why a high-priority medication task was placed before a low-priority enrichment activity, or why a long grooming session was deferred because time ran out.
+
+**Building blocks (main objects):**
+
+| Class | Attributes | Methods |
+|-------|-----------|---------|
+| `Owner` | `name`, `available_minutes` | `set_available_time()` |
+| `Pet` | `name`, `species`, `tasks` (list) | `add_task()`, `get_tasks()` |
+| `Task` | `name`, `duration_minutes`, `priority` ("high"/"medium"/"low"), `completed` | `mark_complete()` |
+| `Scheduler` | `pet`, `owner` | `generate_plan()`, `sort_by_priority()`, `filter_by_time()` |
+| `DailyPlan` | `scheduled_tasks` (list), `skipped_tasks` (list), `total_duration`, `explanation` | `display()`, `get_summary()` |
+
+**Responsibilities:**
+- `Owner` holds the time budget — the hard constraint the scheduler must respect.
+- `Pet` groups tasks together and is the central entity the owner cares for.
+- `Task` is the unit of work; priority and duration are the two values the scheduler acts on.
+- `Scheduler` contains all scheduling logic — it decides what fits, what gets cut, and in what order.
+- `DailyPlan` is the output object — a snapshot of the day's schedule plus a human-readable explanation of decisions made.
+
 - Briefly describe your initial UML design.
 - What classes did you include, and what responsibilities did you assign to each?
 

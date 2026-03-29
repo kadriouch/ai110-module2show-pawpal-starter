@@ -5,6 +5,13 @@ st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
 DATA_FILE = "data.json"
 
+PRIORITY_EMOJI = {"high": "🔴", "medium": "🟡", "low": "🟢"}
+FREQUENCY_EMOJI = {"daily": "📅", "weekly": "📆", "as-needed": "🔔"}
+
+def priority_label(priority: str) -> str:
+    """Return emoji + text label for a priority value."""
+    return f"{PRIORITY_EMOJI.get(priority, '')} {priority.capitalize()}"
+
 def save():
     """Persist current owner state to disk."""
     if st.session_state.owner:
@@ -148,13 +155,13 @@ else:
         rows = []
         for t in all_tasks:
             rows.append({
-                "Status":   "✅ Done" if t.completed else "⬜ Pending",
-                "Task":     t.name,
-                "Duration": f"{t.duration_minutes} min",
-                "Priority": t.priority,
-                "Frequency": t.frequency,
-                "Start":    t.start_time or "—",
-                "Next due": str(t.next_due) if t.next_due else "today",
+                "Status":    "✅ Done" if t.completed else "⬜ Pending",
+                "Task":      t.name,
+                "Priority":  priority_label(t.priority),
+                "Duration":  f"{t.duration_minutes} min",
+                "Frequency": f"{FREQUENCY_EMOJI.get(t.frequency, '')} {t.frequency}",
+                "Start":     t.start_time or "—",
+                "Next due":  str(t.next_due) if t.next_due else "today",
             })
         st.table(rows)
     else:
@@ -231,9 +238,9 @@ else:
                 for t in scheduled:
                     sched_rows.append({
                         "Task":      t.name,
-                        "Priority":  t.priority,
+                        "Priority":  priority_label(t.priority),
                         "Duration":  f"{t.duration_minutes} min",
-                        "Frequency": t.frequency,
+                        "Frequency": f"{FREQUENCY_EMOJI.get(t.frequency, '')} {t.frequency}",
                         "Start":     t.start_time or "—",
                     })
                 st.table(sched_rows)
@@ -246,7 +253,7 @@ else:
                     skip_rows = [
                         {
                             "Task":     t.name,
-                            "Priority": t.priority,
+                            "Priority": priority_label(t.priority),
                             "Duration": f"{t.duration_minutes} min",
                         }
                         for t in skipped

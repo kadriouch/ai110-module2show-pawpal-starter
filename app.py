@@ -3,11 +3,27 @@ from pawpal_system import Owner, Pet, Task, Scheduler
 
 st.set_page_config(page_title="PawPal+", page_icon="🐾", layout="centered")
 
+DATA_FILE = "data.json"
+
+def save():
+    """Persist current owner state to disk."""
+    if st.session_state.owner:
+        st.session_state.owner.save_to_json(DATA_FILE)
+
 # --- Session state initialisation ---
+# Load from disk on the very first run; subsequent reruns keep the in-memory object.
 if "owner" not in st.session_state:
-    st.session_state.owner = None
+    st.session_state.owner = Owner.load_from_json(DATA_FILE)  # None if no file yet
 if "current_pet" not in st.session_state:
     st.session_state.current_pet = None
+
+# Restore current_pet pointer after a page reload (match by name)
+if (
+    st.session_state.owner
+    and st.session_state.current_pet is None
+    and st.session_state.owner.pets
+):
+    st.session_state.current_pet = st.session_state.owner.pets[0]
 
 # ── Title ─────────────────────────────────────────────────────────────────────
 st.title("🐾 PawPal+")
@@ -33,6 +49,7 @@ if submitted:
     else:
         st.session_state.owner.name = owner_name
         st.session_state.owner.set_available_time(int(available_minutes))
+    save()
     st.success(f"Owner '{owner_name}' saved — {available_minutes} min available today.")
 
 if st.session_state.owner:
@@ -65,6 +82,7 @@ else:
             new_pet = Pet(name=pet_name, species=species)
             st.session_state.owner.add_pet(new_pet)
             st.session_state.current_pet = new_pet
+            save()
             st.success(f"Added {species} '{pet_name}'!")
 
     if st.session_state.owner.pets:
@@ -118,6 +136,7 @@ else:
                     start_time=start_time.strip() if start_time.strip() else None,
                 )
                 pet.add_task(new_task)
+                save()
                 st.success(f"Task '{task_name}' added to {pet.name}.")
             except ValueError as e:
                 st.error(f"Invalid input: {e}")

@@ -95,6 +95,35 @@ The scheduler handles all tested scenarios correctly, including boundary conditi
 
 ---
 
+## Optional Extension: Data Persistence
+
+PawPal+ automatically saves your owner, pets, and tasks to `data.json` and reloads them on the next run — no manual export needed.
+
+### How it works
+
+Each class exposes a `to_dict()` / `from_dict()` pair for JSON-safe serialisation. `date` objects are stored as ISO-format strings (`"2026-04-05"`) and converted back on load. No third-party libraries required.
+
+```python
+owner.save_to_json("data.json")      # writes data.json
+owner = Owner.load_from_json("data.json")  # restores full state
+```
+
+`load_from_json` returns `None` (instead of raising) if the file is missing or corrupt — so a fresh run always starts cleanly.
+
+In `app.py`, a `save()` helper is called automatically after every mutation — saving owner info, adding a pet, or adding a task — so the file is always in sync with the UI.
+
+### How Agent Mode was used
+
+Agent Mode was prompted with:
+
+> *"Add save_to_json and load_from_json methods to the Owner class in #file:pawpal_system.py, then update the Streamlit state in #file:app.py to load this data on startup."*
+
+Agent Mode suggested using `marshmallow` for schema-based serialisation. That was rejected in favour of a custom `to_dict` / `from_dict` approach: marshmallow adds a dependency and a schema layer that duplicates the dataclass field definitions. The custom approach is 30 lines, zero dependencies, and handles the only non-trivial type (`date` → ISO string) in one line per field.
+
+The `current_pet` pointer restoration (re-linking the selected pet after a page reload) was not in the Agent Mode output and was added manually — a good example of where AI-generated code needs a human to think through the stateful edge cases.
+
+---
+
 ## Optional Extension: Weighted Task Scoring
 
 > *Implemented via Agent Mode — see below for how AI was used.*

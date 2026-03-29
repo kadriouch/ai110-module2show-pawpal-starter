@@ -1,6 +1,8 @@
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 from typing import Literal
+import json
+import os
 
 VALID_PRIORITIES = ("high", "medium", "low")
 VALID_FREQUENCIES = ("daily", "weekly", "as-needed")
@@ -66,6 +68,32 @@ class Task:
         self.completed = False
         self.next_due = None
 
+    def to_dict(self) -> dict:
+        """Serialise to a JSON-safe dictionary."""
+        return {
+            "name":             self.name,
+            "duration_minutes": self.duration_minutes,
+            "priority":         self.priority,
+            "frequency":        self.frequency,
+            "completed":        self.completed,
+            "next_due":         self.next_due.isoformat() if self.next_due else None,
+            "start_time":       self.start_time,
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Task":
+        """Deserialise from a dictionary produced by to_dict()."""
+        next_due_raw = data.get("next_due")
+        return cls(
+            name=data["name"],
+            duration_minutes=data["duration_minutes"],
+            priority=data["priority"],
+            frequency=data.get("frequency", "daily"),
+            completed=data.get("completed", False),
+            next_due=date.fromisoformat(next_due_raw) if next_due_raw else None,
+            start_time=data.get("start_time"),
+        )
+
 
 @dataclass
 class Pet:
@@ -100,6 +128,22 @@ class Pet:
             if task.frequency == "daily":
                 task.reset()
 
+    def to_dict(self) -> dict:
+        """Serialise to a JSON-safe dictionary."""
+        return {
+            "name":    self.name,
+            "species": self.species,
+            "tasks":   [t.to_dict() for t in self.tasks],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Pet":
+        """Deserialise from a dictionary produced by to_dict()."""
+        pet = cls(name=data["name"], species=data["species"])
+        for task_data in data.get("tasks", []):
+            pet.add_task(Task.from_dict(task_data))
+        return pet
+
 
 @dataclass
 class Owner:
@@ -132,6 +176,41 @@ class Owner:
         for pet in self.pets:
             tasks.extend(pet.get_pending_tasks())
         return tasks
+
+    def to_dict(self) -> dict:
+        """Serialise to a JSON-safe dictionary."""
+        return {
+            "name":              self.name,
+            "available_minutes": self.available_minutes,
+            "pets":              [p.to_dict() for p in self.pets],
+        }
+
+    @classmethod
+    def from_dict(cls, data: dict) -> "Owner":
+        """Deserialise from a dictionary produced by to_dict()."""
+        owner = cls(name=data["name"], available_minutes=data["available_minutes"])
+        for pet_data in data.get("pets", []):
+            owner.add_pet(Pet.from_dict(pet_data))
+        return owner
+
+    def save_to_json(self, filepath: str = "data.json") -> None:
+        """Persist the owner, their pets, and all tasks to a JSON file."""
+        with open(filepath, "w") as f:
+            json.dump(self.to_dict(), f, indent=2)
+
+    @classmethod
+    def load_from_json(cls, filepath: str = "data.json") -> "Owner | None":
+        """
+        Load and return an Owner from a JSON file.
+        Returns None if the file does not exist or cannot be parsed.
+        """
+        if not os.path.exists(filepath):
+            return None
+        try:
+            with open(filepath) as f:
+                return cls.from_dict(json.load(f))
+        except (json.JSONDecodeError, KeyError):
+            return None
 
 
 @dataclass

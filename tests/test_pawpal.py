@@ -348,3 +348,43 @@ def test_invalid_start_time_raises():
     """A malformed start_time string raises ValueError on Task construction."""
     with pytest.raises(ValueError):
         Task(name="Walk", duration_minutes=30, priority="high", start_time="8:00am")
+
+
+# ── Weighted scoring ──────────────────────────────────────────────────────────
+
+def test_score_task_high_daily_scores_above_low_asneeded():
+    """A high-priority daily task should score higher than a low-priority as-needed task."""
+    owner = Owner(name="Alex", available_minutes=120)
+    scheduler = Scheduler(owner)
+    urgent = Task(name="Meds",  duration_minutes=5,  priority="high",   frequency="daily")
+    casual = Task(name="Brush", duration_minutes=15, priority="low",    frequency="as-needed")
+    assert scheduler.score_task(urgent) > scheduler.score_task(casual)
+
+def test_score_task_efficiency_bonus_favours_shorter():
+    """Two tasks with identical priority and frequency: shorter one scores higher."""
+    owner = Owner(name="Alex", available_minutes=120)
+    scheduler = Scheduler(owner)
+    short = Task(name="Quick feed", duration_minutes=5,  priority="medium", frequency="daily")
+    long  = Task(name="Long walk",  duration_minutes=60, priority="medium", frequency="daily")
+    assert scheduler.score_task(short) > scheduler.score_task(long)
+
+def test_sort_by_weight_orders_highest_score_first():
+    """sort_by_weight returns tasks highest-score first."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Play",      duration_minutes=20, priority="low",    frequency="as-needed"))
+    pet.add_task(Task(name="Meds",      duration_minutes=5,  priority="high",   frequency="daily"))
+    pet.add_task(Task(name="Grooming",  duration_minutes=15, priority="medium", frequency="weekly"))
+    owner.add_pet(pet)
+    scheduler = Scheduler(owner)
+    ranked = scheduler.sort_by_weight(pet.get_pending_tasks())
+    scores = [scheduler.score_task(t) for t in ranked]
+    assert scores == sorted(scores, reverse=True)
+
+def test_sort_by_weight_daily_medium_beats_weekly_medium():
+    """A medium daily task scores higher than a medium weekly task (frequency matters)."""
+    owner = Owner(name="Alex", available_minutes=120)
+    scheduler = Scheduler(owner)
+    daily  = Task(name="Feed",  duration_minutes=5, priority="medium", frequency="daily")
+    weekly = Task(name="Brush", duration_minutes=5, priority="medium", frequency="weekly")
+    assert scheduler.score_task(daily) > scheduler.score_task(weekly)

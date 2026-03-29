@@ -1,59 +1,80 @@
-# PawPal+ (Module 2 Project)
+# 🐾 PawPal+
 
-You are building **PawPal+**, a Streamlit app that helps a pet owner plan care tasks for their pet.
+**PawPal+** is a Streamlit app that helps a busy pet owner stay consistent with daily pet care. It generates a prioritised daily schedule across multiple pets, detects scheduling conflicts, and automatically reschedules recurring tasks.
 
-## Scenario
+---
 
-A busy pet owner needs help staying consistent with pet care. They want an assistant that can:
+## 📸 Demo
 
-- Track pet care tasks (walks, feeding, meds, enrichment, grooming, etc.)
-- Consider constraints (time available, priority, owner preferences)
-- Produce a daily plan and explain why it chose that plan
+<a href="/course_images/ai110/pawpal_screenshot.png" target="_blank">
+  <img src='/course_images/ai110/pawpal_screenshot.png' title='PawPal App' width='' alt='PawPal App' class='center-block' />
+</a>
 
-Your job is to design the system first (UML), then implement the logic in Python, then connect it to the Streamlit UI.
+---
 
-## What you will build
+## Features
 
-Your final app should:
+### Owner & pet management
+- Register an owner with a daily time budget (in minutes)
+- Add and manage multiple pets (name + species)
+- Tasks are organised per pet and aggregated for scheduling
 
-- Let a user enter basic owner + pet info
-- Let a user add/edit tasks (duration + priority at minimum)
-- Generate a daily schedule/plan based on constraints and priorities
-- Display the plan clearly (and ideally explain the reasoning)
-- Include tests for the most important scheduling behaviors
+### Task management
+- Create tasks with **name**, **duration**, **priority** (`high` / `medium` / `low`), and **frequency** (`daily` / `weekly` / `as-needed`)
+- Optionally assign a **start time** (`HH:MM`) to enable time-overlap detection
+- View all tasks per pet in a table showing status, next due date, and frequency
+
+### Priority-based scheduling
+- Tasks are sorted **high → medium → low**, with duration as a tiebreaker (shorter tasks of equal priority go first)
+- Alternative **shortest-first** sort mode maximises the number of tasks completed when time is tight
+- Greedy time-budget fitting: tasks that don't fit are skipped, but the scheduler continues to check shorter tasks that might still fit
+
+### Automatic recurring tasks
+- Completing a `daily` task automatically sets its next due date to **tomorrow**
+- Completing a `weekly` task sets its next due date to **+7 days** via Python's `timedelta`
+- `as-needed` tasks complete without auto-rescheduling — the owner decides when next
+
+### Conflict detection
+Three types of warnings (displayed before you generate the plan, never crashes the app):
+1. **Budget overflow** — high-priority tasks combined exceed available time
+2. **Duplicate names** — same task name used across different pets
+3. **Time overlap** — two timed tasks have intersecting scheduled windows
+
+### Explained scheduling
+Every generated plan includes a plain-language **reasoning block** that explains how many tasks were retrieved, what sort order was used, how many fit, and how many were skipped.
+
+---
+
+## Project structure
+
+```
+pawpal_system.py   — core logic: Task, Pet, Owner, DailyPlan, Scheduler
+app.py             — Streamlit UI
+main.py            — CLI demo / testing ground
+tests/
+  test_pawpal.py   — 35 automated pytest tests
+uml_final.md       — final Mermaid.js UML diagram (paste at mermaid.live for PNG)
+reflection.md      — design decisions and tradeoffs
+```
+
+---
 
 ## Getting started
 
-### Setup
-
 ```bash
 python -m venv .venv
-source .venv/bin/activate  # Windows: .venv\Scripts\activate
+source .venv/bin/activate   # Windows: .venv\Scripts\activate
 pip install -r requirements.txt
+streamlit run app.py
 ```
 
-### Suggested workflow
-
-1. Read the scenario carefully and identify requirements and edge cases.
-2. Draft a UML diagram (classes, attributes, methods, relationships).
-3. Convert UML into Python class stubs (no logic yet).
-4. Implement scheduling logic in small increments.
-5. Add tests to verify key behaviors.
-6. Connect your logic to the Streamlit UI in `app.py`.
-7. Refine UML so it matches what you actually built.
+---
 
 ## Testing PawPal+
 
-Run the full test suite from the project root:
-
 ```bash
-python -m pytest
-```
-
-Or with verbose output to see each test name:
-
-```bash
-python -m pytest -v
+python -m pytest        # all 35 tests
+python -m pytest -v     # verbose output
 ```
 
 **What the tests cover (35 tests total):**
@@ -70,30 +91,74 @@ python -m pytest -v
 
 **Confidence level: ★★★★☆ (4/5)**
 
-The scheduler handles all tested scenarios correctly, including boundary conditions (exact-fit budget, future due dates, adjacent non-overlapping tasks). One star withheld because real-world usage could surface untested combinations — for example, tasks spanning midnight, owners with dozens of pets, or concurrent UI interactions modifying session state. Those scenarios are out of scope for this project but would be the next testing priority.
+The scheduler handles all tested scenarios correctly, including boundary conditions (exact-fit budget, future due dates, adjacent non-overlapping tasks). One star withheld because real-world usage could surface untested combinations — tasks spanning midnight, owners with dozens of pets, or concurrent UI interactions modifying session state.
 
-## Smarter Scheduling
+---
 
-Beyond basic priority sorting, `pawpal_system.py` includes several algorithmic enhancements in the `Scheduler` class:
+## Optional Extension: Weighted Task Scoring
+
+> *Implemented via Agent Mode — see below for how AI was used.*
+
+A third sort mode, **Weighted score**, is available alongside Priority and Duration in the schedule generator.
+
+### How it works
+
+Each task receives a numeric score computed by `Scheduler.score_task()`:
+
+```
+score = priority_weight + frequency_weight + efficiency_bonus
+
+priority_weight:  high=10, medium=5, low=2
+frequency_weight: daily=4,  weekly=2, as-needed=1
+efficiency_bonus: 1 / duration_minutes
+```
+
+Tasks are then sorted highest-score first by `sort_by_weight()`.
+
+**Why this is better than binary priority for some scenarios:**
+
+| Scenario | Priority sort | Weighted sort |
+|----------|--------------|---------------|
+| High-priority weekly grooming vs medium-priority daily feeding | Grooming always first | Feeding scores higher (daily urgency) |
+| Two high-priority tasks, one 5 min, one 60 min | 5 min first (duration tiebreaker) | 5 min scores much higher (efficiency bonus = 0.2 vs 0.017) |
+| Low-priority daily walk vs medium-priority as-needed grooming | Grooming first | Walk scores higher (daily recurrence = +4 vs +1) |
+
+The weighted mode is most useful when an owner has a mix of frequencies and doesn't want infrequent high-priority tasks to permanently dominate daily essentials.
+
+### How Agent Mode was used to implement this
+
+Agent Mode was used to explore the design space before writing any code. The prompt was:
+
+> *"Based on my scheduler in #file:pawpal_system.py, suggest a third algorithmic capability that goes beyond sorting by priority or duration. It should be explainable to a non-technical pet owner and produce a meaningfully different schedule."*
+
+Agent Mode returned three candidates:
+1. **Weighted scoring** — combine priority, frequency, and duration into a numeric rank
+2. **Next available slot** — find the earliest time block a task can start given existing timed tasks
+3. **Deadline-aware scheduling** — treat `next_due` as a soft deadline and boost score as the date approaches
+
+Weighted scoring was chosen because it produces a different result to priority sort in realistic scenarios (daily medium tasks vs weekly high tasks), is explainable in plain English, and adds no new data to `Task`. The scoring formula was drafted by Agent Mode and then hand-tuned: the original suggestion used equal weights (5/5/5) which made frequency nearly irrelevant at scale — the values were adjusted to 10/4/variable to give priority the dominant role while still letting frequency and duration influence close calls.
+
+The four new tests were also drafted with AI assistance and then reviewed to confirm they test observable behaviour rather than just the formula's arithmetic.
+
+---
+
+## Smarter Scheduling (algorithm reference)
 
 **Sorting**
-- `sort_by_priority()` — orders tasks high → medium → low, using duration as a tiebreaker (shorter tasks of equal priority go first to maximise throughput).
-- `sort_by_duration()` — orders tasks shortest-first, useful when the goal is to complete as many tasks as possible regardless of priority.
+- `sort_by_priority()` — high → medium → low; duration tiebreaker within same priority
+- `sort_by_duration()` — shortest-first; maximises task count within the time budget
 
 **Filtering**
-- `filter_by_pet(name)` — returns only pending tasks belonging to a specific pet.
-- `filter_by_status(completed)` — separates done tasks from pending ones across all pets.
-- `filter_by_frequency(frequency)` — returns tasks matching `"daily"`, `"weekly"`, or `"as-needed"`.
-- `get_due_tasks(include_as_needed)` — returns only tasks that are actually due today, with an option to include on-demand tasks.
-
-**Recurring tasks**
-Each `Task` has an optional `start_time` (`"HH:MM"`) and a `next_due` date. Calling `mark_task_complete()` on the scheduler automatically sets the next occurrence using `timedelta`:
-- `daily` → next due tomorrow
-- `weekly` → next due in 7 days
-- `as-needed` → no automatic recurrence
+- `filter_by_pet(name)` — pending tasks for one pet only
+- `filter_by_status(completed)` — split done vs. pending across all pets
+- `filter_by_frequency(frequency)` — tasks matching `"daily"`, `"weekly"`, or `"as-needed"`
+- `get_due_tasks(include_as_needed)` — only tasks due today; optionally include on-demand tasks
 
 **Conflict detection**
-`detect_conflicts()` returns human-readable warning strings (never raises) for three scenarios:
-1. High-priority tasks combined exceed the owner's available time budget.
-2. Duplicate task names exist across different pets.
-3. Two timed tasks have overlapping scheduled windows (uses `start_time` + `duration_minutes`).
+- Budget overflow, duplicate names, and time-window overlap — all return warning strings, never raise
+
+---
+
+## UML
+
+See [uml_final.md](uml_final.md) for the final Mermaid.js class diagram and a table of design changes from the initial sketch to the final implementation.

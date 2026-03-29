@@ -174,6 +174,10 @@ class Scheduler:
     """
     PRIORITY_ORDER = {"high": 0, "medium": 1, "low": 2}
 
+    # Weighted scoring weights
+    PRIORITY_WEIGHT  = {"high": 10, "medium": 5, "low": 2}
+    FREQUENCY_WEIGHT = {"daily": 4, "weekly": 2, "as-needed": 1}
+
     def __init__(self, owner: Owner):
         """Initialise the scheduler with an Owner whose pets and tasks it will manage."""
         self.owner = owner
@@ -181,6 +185,34 @@ class Scheduler:
     def get_all_tasks(self) -> list[Task]:
         """Pull all pending tasks from every pet the owner has."""
         return self.owner.get_all_tasks()
+
+    def score_task(self, task: Task) -> float:
+        """
+        Compute a composite urgency score for a task.
+
+        Score = priority_weight + frequency_weight + efficiency_bonus
+
+        - priority_weight:  high=10, medium=5, low=2
+        - frequency_weight: daily=4, weekly=2, as-needed=1
+          (daily tasks recur every day so their cost of deferral is highest)
+        - efficiency_bonus: 1 / duration_minutes — rewards shorter tasks
+          at equal urgency, so the owner completes more items when time is tight
+
+        Higher score → scheduled earlier.
+        """
+        priority_score  = self.PRIORITY_WEIGHT.get(task.priority, 0)
+        frequency_score = self.FREQUENCY_WEIGHT.get(task.frequency, 0)
+        efficiency_bonus = 1.0 / task.duration_minutes   # shorter = higher bonus
+        return priority_score + frequency_score + efficiency_bonus
+
+    def sort_by_weight(self, tasks: list[Task]) -> list[Task]:
+        """
+        Sort tasks by composite urgency score (highest first).
+        Unlike sort_by_priority, this method blends priority, frequency, and
+        duration into a single numeric rank so that a high-priority weekly task
+        and a medium-priority daily task are compared on equal terms.
+        """
+        return sorted(tasks, key=lambda t: self.score_task(t), reverse=True)
 
     def sort_by_priority(self, tasks: list[Task]) -> list[Task]:
         """Sort tasks high → medium → low, then by duration (shorter first) as a tiebreaker."""

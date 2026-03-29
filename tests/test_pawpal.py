@@ -1,4 +1,5 @@
 import pytest
+from datetime import date, timedelta
 from pawpal_system import Owner, Pet, Task, Scheduler
 
 
@@ -127,3 +128,223 @@ def test_scheduler_aggregates_tasks_across_pets():
     scheduled_names = [t.name for t in plan.scheduled_tasks]
     assert "Walk" in scheduled_names
     assert "Feed" in scheduled_names
+
+
+# ── Sorting correctness ───────────────────────────────────────────────────────
+
+def test_sort_by_priority_order():
+    """High tasks appear before medium, medium before low."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Play",  duration_minutes=10, priority="low"))
+    pet.add_task(Task(name="Brush", duration_minutes=15, priority="medium"))
+    pet.add_task(Task(name="Meds",  duration_minutes=5,  priority="high"))
+    owner.add_pet(pet)
+    scheduler = Scheduler(owner)
+    sorted_tasks = scheduler.sort_by_priority(pet.get_pending_tasks())
+    priorities = [t.priority for t in sorted_tasks]
+    assert priorities == ["high", "medium", "low"]
+
+def test_sort_by_priority_duration_tiebreaker():
+    """Within the same priority, shorter tasks come first."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Long walk", duration_minutes=30, priority="high"))
+    pet.add_task(Task(name="Meds",      duration_minutes=5,  priority="high"))
+    owner.add_pet(pet)
+    scheduler = Scheduler(owner)
+    sorted_tasks = scheduler.sort_by_priority(pet.get_pending_tasks())
+    assert sorted_tasks[0].name == "Meds"
+    assert sorted_tasks[1].name == "Long walk"
+
+def test_sort_by_duration_shortest_first():
+    """sort_by_duration returns tasks ordered shortest to longest."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Walk",  duration_minutes=30, priority="high"))
+    pet.add_task(Task(name="Meds",  duration_minutes=5,  priority="high"))
+    pet.add_task(Task(name="Brush", duration_minutes=15, priority="medium"))
+    owner.add_pet(pet)
+    scheduler = Scheduler(owner)
+    sorted_tasks = scheduler.sort_by_duration(pet.get_pending_tasks())
+    durations = [t.duration_minutes for t in sorted_tasks]
+    assert durations == sorted(durations)
+
+def test_all_same_priority_sorted_by_duration():
+    """When all priorities are equal, the shortest task is scheduled first."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="C", duration_minutes=20, priority="medium"))
+    pet.add_task(Task(name="A", duration_minutes=5,  priority="medium"))
+    pet.add_task(Task(name="B", duration_minutes=10, priority="medium"))
+    owner.add_pet(pet)
+    plan = Scheduler(owner).generate_plan()
+    names = [t.name for t in plan.scheduled_tasks]
+    assert names == ["A", "B", "C"]
+
+
+# ── Recurrence logic ──────────────────────────────────────────────────────────
+
+def test_daily_task_next_due_is_tomorrow():
+    """Completing a daily task sets next_due to today + 1 day."""
+    today = date.today()
+    owner = Owner(name="Alex", available_minutes=60)
+    pet = Pet(name="Biscuit", species="Dog")
+    task = Task(name="Walk", duration_minutes=30, priority="high", frequency="daily")
+    pet.add_task(task)
+    owner.add_pet(pet)
+    Scheduler(owner).mark_task_complete("Walk", on_date=today)
+    assert task.next_due == today + timedelta(days=1)
+    assert task.completed is True
+
+def test_weekly_task_next_due_is_next_week():
+    """Completing a weekly task sets next_due to today + 7 days."""
+    today = date.today()
+    owner = Owner(name="Alex", available_minutes=60)
+    pet = Pet(name="Biscuit", species="Dog")
+    task = Task(name="Grooming", duration_minutes=20, priority="medium", frequency="weekly")
+    pet.add_task(task)
+    owner.add_pet(pet)
+    Scheduler(owner).mark_task_complete("Grooming", on_date=today)
+    assert task.next_due == today + timedelta(weeks=1)
+
+def test_as_needed_task_no_auto_recurrence():
+    """Completing an as-needed task does not set a next_due date."""
+    today = date.today()
+    owner = Owner(name="Alex", available_minutes=60)
+    pet = Pet(name="Biscuit", species="Dog")
+    task = Task(name="Bath", duration_minutes=30, priority="low", frequency="as-needed")
+    pet.add_task(task)
+    owner.add_pet(pet)
+    Scheduler(owner).mark_task_complete("Bath", on_date=today)
+    assert task.next_due is None
+    assert task.completed is True
+
+def test_future_next_due_excluded_from_pending():
+    """A task with next_due in the future is not returned as pending."""
+    tomorrow = date.today() + timedelta(days=1)
+    task = Task(name="Walk", duration_minutes=30, priority="high",
+                frequency="daily", next_due=tomorrow)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(task)
+    assert task not in pet.get_pending_tasks()
+
+def test_completed_daily_task_absent_from_next_plan():
+    """After marking a daily task complete, it does not appear in the next generate_plan()."""
+    today = date.today()
+    owner = Owner(name="Alex", available_minutes=60)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Walk", duration_minutes=30, priority="high", frequency="daily"))
+    owner.add_pet(pet)
+    scheduler = Scheduler(owner)
+    scheduler.mark_task_complete("Walk", on_date=today)
+    plan = scheduler.generate_plan()
+    assert all(t.name != "Walk" for t in plan.scheduled_tasks)
+
+
+# ── Conflict detection ────────────────────────────────────────────────────────
+
+def test_conflict_same_start_time():
+    """Two tasks at identical start times are flagged as overlapping."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Walk", duration_minutes=30, priority="high",   start_time="08:00"))
+    pet.add_task(Task(name="Meds", duration_minutes=5,  priority="high",   start_time="08:00"))
+    owner.add_pet(pet)
+    conflicts = Scheduler(owner).detect_conflicts()
+    assert any("Walk" in w and "Meds" in w for w in conflicts)
+
+def test_conflict_overlapping_windows():
+    """A task starting inside another task's window is flagged."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Walk", duration_minutes=30, priority="high", start_time="08:00"))
+    pet.add_task(Task(name="Feed", duration_minutes=5,  priority="high", start_time="08:20"))
+    owner.add_pet(pet)
+    conflicts = Scheduler(owner).detect_conflicts()
+    assert any("Walk" in w and "Feed" in w for w in conflicts)
+
+def test_no_conflict_adjacent_tasks():
+    """Tasks that touch but do not overlap are not flagged."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Walk", duration_minutes=30, priority="high", start_time="08:00"))
+    pet.add_task(Task(name="Feed", duration_minutes=5,  priority="high", start_time="08:30"))
+    owner.add_pet(pet)
+    conflicts = Scheduler(owner).detect_conflicts()
+    overlap_warnings = [w for w in conflicts if "Time conflict" in w]
+    assert overlap_warnings == []
+
+def test_conflict_high_priority_exceeds_budget():
+    """detect_conflicts warns when high-priority tasks alone exceed available time."""
+    owner = Owner(name="Alex", available_minutes=10)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Walk", duration_minutes=30, priority="high"))
+    pet.add_task(Task(name="Meds", duration_minutes=20, priority="high"))
+    owner.add_pet(pet)
+    conflicts = Scheduler(owner).detect_conflicts()
+    assert any("High-priority" in w for w in conflicts)
+
+def test_no_conflict_tasks_without_start_time():
+    """Tasks without start_time never trigger a time-overlap warning."""
+    owner = Owner(name="Alex", available_minutes=120)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Walk", duration_minutes=30, priority="high"))
+    pet.add_task(Task(name="Meds", duration_minutes=5,  priority="high"))
+    owner.add_pet(pet)
+    conflicts = Scheduler(owner).detect_conflicts()
+    overlap_warnings = [w for w in conflicts if "Time conflict" in w]
+    assert overlap_warnings == []
+
+
+# ── Edge cases ────────────────────────────────────────────────────────────────
+
+def test_pet_with_no_tasks():
+    """A pet with no tasks returns an empty pending list without crashing."""
+    pet = Pet(name="Ghost", species="Cat")
+    assert pet.get_pending_tasks() == []
+
+def test_owner_with_no_pets():
+    """An owner with no pets produces an empty plan without crashing."""
+    owner = Owner(name="Alex", available_minutes=60)
+    plan = Scheduler(owner).generate_plan()
+    assert plan.scheduled_tasks == []
+    assert plan.skipped_tasks == []
+    assert plan.total_duration == 0
+
+def test_zero_available_minutes():
+    """With zero time available, every task is skipped."""
+    owner = Owner(name="Alex", available_minutes=0)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Walk", duration_minutes=30, priority="high"))
+    owner.add_pet(pet)
+    plan = Scheduler(owner).generate_plan()
+    assert plan.scheduled_tasks == []
+    assert len(plan.skipped_tasks) == 1
+    assert plan.total_duration == 0
+
+def test_task_exactly_fills_budget():
+    """A task whose duration equals available_minutes is scheduled, not skipped."""
+    owner = Owner(name="Alex", available_minutes=30)
+    pet = Pet(name="Biscuit", species="Dog")
+    pet.add_task(Task(name="Walk", duration_minutes=30, priority="high"))
+    owner.add_pet(pet)
+    plan = Scheduler(owner).generate_plan()
+    assert len(plan.scheduled_tasks) == 1
+    assert plan.total_duration == 30
+
+def test_all_tasks_already_completed():
+    """When all tasks are done, generate_plan returns an empty schedule."""
+    owner = Owner(name="Alex", available_minutes=60)
+    pet = Pet(name="Biscuit", species="Dog")
+    task = Task(name="Walk", duration_minutes=30, priority="high")
+    task.mark_complete()
+    pet.add_task(task)
+    owner.add_pet(pet)
+    plan = Scheduler(owner).generate_plan()
+    assert plan.scheduled_tasks == []
+
+def test_invalid_start_time_raises():
+    """A malformed start_time string raises ValueError on Task construction."""
+    with pytest.raises(ValueError):
+        Task(name="Walk", duration_minutes=30, priority="high", start_time="8:00am")

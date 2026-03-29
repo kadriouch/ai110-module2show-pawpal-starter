@@ -42,6 +42,36 @@ pip install -r requirements.txt
 6. Connect your logic to the Streamlit UI in `app.py`.
 7. Refine UML so it matches what you actually built.
 
+## Testing PawPal+
+
+Run the full test suite from the project root:
+
+```bash
+python -m pytest
+```
+
+Or with verbose output to see each test name:
+
+```bash
+python -m pytest -v
+```
+
+**What the tests cover (35 tests total):**
+
+| Group | Count | Description |
+|-------|-------|-------------|
+| Task behaviour | 5 | `mark_complete`, `reset`, validation (bad priority, zero duration) |
+| Pet behaviour | 5 | `add_task`, `remove_task`, pending task filtering |
+| Scheduler — core | 5 | Priority ordering, time budget, skip logic, multi-pet aggregation |
+| Sorting correctness | 4 | Priority sort, duration tiebreaker, `sort_by_duration`, all-same-priority case |
+| Recurrence logic | 5 | Daily → tomorrow, weekly → +7 days, as-needed → no recurrence, future `next_due` excluded |
+| Conflict detection | 5 | Same start time, overlapping windows, adjacent tasks (no false positive), budget overflow |
+| Edge cases | 6 | Empty pet, empty owner, zero budget, exact-fit budget, all tasks completed, invalid `start_time` |
+
+**Confidence level: ★★★★☆ (4/5)**
+
+The scheduler handles all tested scenarios correctly, including boundary conditions (exact-fit budget, future due dates, adjacent non-overlapping tasks). One star withheld because real-world usage could surface untested combinations — for example, tasks spanning midnight, owners with dozens of pets, or concurrent UI interactions modifying session state. Those scenarios are out of scope for this project but would be the next testing priority.
+
 ## Smarter Scheduling
 
 Beyond basic priority sorting, `pawpal_system.py` includes several algorithmic enhancements in the `Scheduler` class:
